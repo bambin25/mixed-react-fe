@@ -1,0 +1,54 @@
+name: react frontend auto deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: git repository 가져오기
+        uses: actions/checkout@v4
+
+      - name: nodejs 설치하기
+        uses: actions/setup-node@v3
+        with:
+          node-version: 22
+
+      - name: 의존성 설치
+        run: npm install
+
+      - name: 실행파일 빌드하기 (npm run build)
+        run: npm run build
+
+      - name: 도커 이미지 빌드하기 (docker build -t)
+        run: docker build -t ${{ secrets.DOCKER_USER }}/react-test:mixed .
+
+      - name: 도커 로그인하기 (docker login -u)
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USER }}
+          password: ${{ secrets.DOCKER_KEY }}
+
+      - name: 이미지 푸시하기 (docker push )
+        run: docker push ${{ secrets.DOCKER_USER }}/react-test:mixed
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: ec2 에 접속해서 docker 이미지 풀하고 컨테이너 실행시키기
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          script: |
+            docker stop react || true
+            docker rm react || true
+            docker rmi ${{ secrets.DOCKER_USER }}/react-test:mixed || true
+            docker run -d -p 80:80 --name react ${{ secrets.DOCKER_USER }}/react-test:mixed
